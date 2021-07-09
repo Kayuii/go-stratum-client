@@ -4,7 +4,8 @@ import (
 	"strings"
 	"sync"
 
-	stratum "github.com/gurupras/go-stratum-client"
+	stratum "go-stratum-client"
+
 	log "github.com/sirupsen/logrus"
 )
 

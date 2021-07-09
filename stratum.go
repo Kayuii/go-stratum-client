@@ -44,10 +44,10 @@ type StratumContext struct {
 func New() *StratumContext {
 	sc := &StratumContext{}
 	sc.KeepAliveDuration = KeepAliveDuration
-	sc.workListeners = set.New()
-	sc.submitListeners = set.New()
-	sc.responseListeners = set.New()
-	sc.submittedWorkRequestIds = set.New()
+	sc.workListeners = set.New(set.ThreadSafe)
+	sc.submitListeners = set.New(set.ThreadSafe)
+	sc.responseListeners = set.New(set.ThreadSafe)
+	sc.submittedWorkRequestIds = set.New(set.ThreadSafe)
 	sc.stopChan = make(chan struct{})
 	return sc
 }
@@ -305,7 +305,7 @@ func (sc *StratumContext) Reconnect() {
 func (sc *StratumContext) SubmitWork(work *Work, hash string) error {
 	if work == sc.LastSubmittedWork {
 		// log.Warnf("Prevented submission of stale work")
-		// return nil
+		return nil
 	}
 	args := make(map[string]interface{})
 	nonceStr, err := BinToHex(work.Data[39:43])
