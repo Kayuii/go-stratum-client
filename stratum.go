@@ -129,12 +129,12 @@ func (sc *StratumContext) Authorize(username, password string) error {
 
 func (sc *StratumContext) authorizeLocked(username, password string) error {
 	log.Debugf("Beginning authorize")
-	args := make(map[string]interface{})
-	args["login"] = username
-	args["pass"] = password
-	args["agent"] = "go-stratum-client"
+	args := []string{username, password}
+	// args[""] = username
+	// args["params"] = []string{username, password}
+	// args["method"] = "mining.authorize"
 
-	_, err := sc.CallLocked("login", args)
+	_, err := sc.CallLocked("mining.authorize", args)
 	if err != nil {
 		return err
 	}
@@ -152,17 +152,19 @@ func (sc *StratumContext) authorizeLocked(username, password string) error {
 	sc.username = username
 	sc.password = password
 
-	sid, ok := response.Result["id"]
-	if !ok {
+	sid := response.MessageID
+	ok := response.Result
+	if !ok.(bool) {
 		return fmt.Errorf("Response did not have a sessionID: %v", response.String())
 	}
 	sc.SessionID = sid.(string)
-	work, err := ParseWork(response.Result["job"].(map[string]interface{}))
-	if err != nil {
-		return err
-	}
-	log.Debugf("Authorization successful")
-	sc.NotifyNewWork(work)
+
+	// work, err := ParseWork(response.Result["mining.notify"].(map[string]interface{}))
+	// if err != nil {
+	// 	return err
+	// }
+	// log.Debugf("Authorization successful")
+	// sc.NotifyNewWork(work)
 
 	// Handle messages
 	go sc.RunHandleMessages()
@@ -345,9 +347,9 @@ func (sc *StratumContext) RegisterResponseListener(rChan chan *Response) {
 }
 
 func (sc *StratumContext) GetJob() error {
-	args := make(map[string]interface{})
-	args["id"] = sc.SessionID
-	_, err := sc.Call("getjob", args)
+	// args := make(map[string]interface{})
+	// args["id"] = sc.SessionID
+	_, err := sc.Call("mining.subscribe", []string{})
 	return err
 }
 

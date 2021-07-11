@@ -1,4 +1,4 @@
-module github.com/kayuii/go-stratum-client
+module go-stratum-client
 
 go 1.16
 
