@@ -3,6 +3,7 @@ module go-stratum-client
 go 1.16
 
 require (
+	github.com/bitly/go-simplejson v0.5.0 // indirect
 	github.com/fatih/set v0.2.1
 	github.com/gurupras/go-stoppable-net-listener v0.0.0-20170408221241-544729910f14
 	github.com/hydrogen18/stoppableListener v0.0.0-20161101122645-827d760f0663 // indirect

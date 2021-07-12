@@ -4,15 +4,21 @@ import "fmt"
 
 type StratumErrorCode int
 
+// https://zh.braiins.com/stratum-v1/docs
+// 20 - Other/Unknown
+// 21 - Job not found (=stale)
+// 22 - Duplicate share
+// 23 - Low difficulty share
+// 24 - Unauthorized worker
+// 25 - Not subscribed
+
 const (
-	STRATUM_ERROR_UNKNOWN                StratumErrorCode = -1
-	STRATUM_ERROR_SERVICE                StratumErrorCode = -2
-	STRATUM_ERROR_METHOD                 StratumErrorCode = -3
-	STRATUM_ERROR_FEE_REQUIRED           StratumErrorCode = -10
-	STRATUM_ERROR_SIGNATURE_REQUIRED     StratumErrorCode = -20
-	STRATUM_ERROR_SIGNATURE_UNAVAILABLE  StratumErrorCode = -21
-	STRATUM_ERROR_UNKNOWN_SIGNATURE_TYPE StratumErrorCode = -22
-	STRATUM_ERROR_BAD_SIGNATURE          StratumErrorCode = -23
+	STRATUM_ERROR_Other_Unknown        StratumErrorCode = 20
+	STRATUM_ERROR_JOB_NOT_FOUND        StratumErrorCode = 21
+	STRATUM_ERROR_DUPLICATE_SHARE      StratumErrorCode = 22
+	STRATUM_ERROR_LOW_DIFFICULTY_SHARE StratumErrorCode = 23
+	STRATUM_ERROR_UNAUTHORIZED_WORKER  StratumErrorCode = 24
+	STRATUM_ERROR_NOT_SUBSCRIBED       StratumErrorCode = 25
 )
 
 type StratumError struct {

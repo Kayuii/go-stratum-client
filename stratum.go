@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	simplejson "github.com/bitly/go-simplejson"
 	"github.com/fatih/set"
 	log "github.com/sirupsen/logrus"
 )
@@ -22,10 +23,11 @@ type StratumContext struct {
 	net.Conn
 	sync.Mutex
 	reader                  *bufio.Reader
-	id                      int
+	id                      uint64
 	SessionID               string
 	KeepAliveDuration       time.Duration
 	Work                    *Work
+	Subscribe               *Subscribe
 	workListeners           set.Interface
 	submitListeners         set.Interface
 	responseListeners       set.Interface
@@ -78,7 +80,7 @@ func (sc *StratumContext) Call(serviceMethod string, args interface{}) (*Request
 func (sc *StratumContext) CallLocked(serviceMethod string, args interface{}) (*Request, error) {
 	sc.id++
 
-	req := NewRequest(sc.id, serviceMethod, args)
+	req := NewRequest(&sc.id, serviceMethod, args)
 	str, err := req.JsonRPCString()
 	if err != nil {
 		return nil, err
@@ -130,9 +132,6 @@ func (sc *StratumContext) Authorize(username, password string) error {
 func (sc *StratumContext) authorizeLocked(username, password string) error {
 	log.Debugf("Beginning authorize")
 	args := []string{username, password}
-	// args[""] = username
-	// args["params"] = []string{username, password}
-	// args["method"] = "mining.authorize"
 
 	_, err := sc.CallLocked("mining.authorize", args)
 	if err != nil {
@@ -148,28 +147,50 @@ func (sc *StratumContext) authorizeLocked(username, password string) error {
 		return response.Error
 	}
 
+	var ok bool
+	if err := json.Unmarshal(*response.Result, &ok); err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("auth fail: %v", response.String())
+	}
+
 	sc.connected = true
 	sc.username = username
 	sc.password = password
 
-	sid := response.MessageID
-	ok := response.Result
-	if !ok.(bool) {
-		return fmt.Errorf("Response did not have a sessionID: %v", response.String())
+	// _, err := sc.Call("mining.subscribe", []string{})
+	_, err = sc.CallLocked("mining.subscribe", []string{})
+	if err != nil {
+		return err
 	}
-	sc.SessionID = sid.(string)
 
-	// work, err := ParseWork(response.Result["mining.notify"].(map[string]interface{}))
-	// if err != nil {
-	// 	return err
-	// }
-	// log.Debugf("Authorization successful")
-	// sc.NotifyNewWork(work)
+	log.Debugf("Triggered subscription..awaiting response")
+	response, err = sc.ReadResponse()
+	if err != nil {
+		return err
+	}
+	if response.Error != nil {
+		return response.Error
+	}
+
+	res, err := simplejson.NewJson(*response.Result)
+	if err != nil {
+		return err
+	}
+
+	sub := Subscribe{
+		MiningNotify:        res.GetIndex(0).GetIndex(0).GetIndex(1).MustString(),
+		MiningSetDifficulty: res.GetIndex(0).GetIndex(1).GetIndex(1).MustString(),
+		ExtraNonce1:         res.GetIndex(0).GetIndex(2).MustString(),
+		Extranonce2_size:    res.GetIndex(0).GetIndex(3).MustInt(),
+	}
+	sc.Subscribe = &sub
 
 	// Handle messages
 	go sc.RunHandleMessages()
 	// Keep-alive
-	go sc.RunKeepAlive()
+	// go sc.RunKeepAlive()
 
 	log.Debugf("Returning from authorizeLocked")
 	return nil
@@ -177,9 +198,9 @@ func (sc *StratumContext) authorizeLocked(username, password string) error {
 
 func (sc *StratumContext) RunKeepAlive() {
 	sendKeepAlive := func() {
-		args := make(map[string]interface{})
-		args["id"] = sc.SessionID
-		if _, err := sc.Call("keepalived", args); err != nil {
+		// args := make(map[string]interface{})
+		// args["id"] = sc.SessionID
+		if _, err := sc.Call("mining.ping", []string{}); err != nil {
 			log.Errorf("Failed keepalive: %v", err)
 		} else {
 			log.Debugf("Posted keepalive")
@@ -208,7 +229,7 @@ func (sc *StratumContext) RunHandleMessages() {
 			log.Debugf("Failed to read string from stratum: %v", err)
 			break
 		}
-		log.Debugf("Received line from server: %v", line)
+		// log.Debugf("Received line from server: %v", line)
 
 		var msg map[string]interface{}
 		if err = json.Unmarshal([]byte(line), &msg); err != nil {
@@ -225,51 +246,61 @@ func (sc *StratumContext) RunHandleMessages() {
 				log.Errorf("Failed to parse response from server: %v", err)
 				continue
 			}
-			isError := false
-			if response.Result == nil {
-				// This is an error
-				isError = true
-			}
-			id := uint64(response.MessageID.(float64))
-			if sc.submittedWorkRequestIds.Has(id) {
-				if !isError {
-					// This is a response from the server signalling that our work has been accepted
-					sc.submittedWorkRequestIds.Remove(id)
-					sc.numAcceptedResults++
-					sc.numSubmittedResults++
-					log.Infof("accepted %d/%d", sc.numAcceptedResults, sc.numSubmittedResults)
-				} else {
-					sc.submittedWorkRequestIds.Remove(id)
-					sc.numSubmittedResults++
-					log.Errorf("rejected %d/%d: %s", (sc.numSubmittedResults - sc.numAcceptedResults), sc.numSubmittedResults, response.Error.Message)
-				}
-			} else {
-				statusIntf, ok := response.Result["status"]
-				if !ok {
-					log.Warnf("Server sent back unknown message: %v", response.String())
-				} else {
-					status := statusIntf.(string)
-					switch status {
-					case "KEEPALIVED":
-						// Nothing to do
-					case "OK":
-						log.Errorf("Failed to properly mark submitted work as accepted. work ID: %v, message=%s", response.MessageID, response.String())
-						log.Errorf("Works: %v", sc.submittedWorkRequestIds.List())
-					}
-				}
-			}
+			log.Errorf("Received message from stratum server: %v", response)
+			// isError := false
+			// if response.Result == nil {
+			// 	// This is an error
+			// 	isError = true
+			// }
+			// id := *response.MessageID
+			// if sc.submittedWorkRequestIds.Has(id) {
+			// 	if !isError {
+			// 		// This is a response from the server signalling that our work has been accepted
+			// 		sc.submittedWorkRequestIds.Remove(id)
+			// 		sc.numAcceptedResults++
+			// 		sc.numSubmittedResults++
+			// 		log.Infof("accepted %d/%d", sc.numAcceptedResults, sc.numSubmittedResults)
+			// 	} else {
+			// 		sc.submittedWorkRequestIds.Remove(id)
+			// 		sc.numSubmittedResults++
+			// 		log.Errorf("rejected %d/%d: %s", (sc.numSubmittedResults - sc.numAcceptedResults), sc.numSubmittedResults, response.Error.Message)
+			// 	}
+			// } else {
+			// 	// statusIntf, ok := response.Result["status"]
+			// 	// if !ok {
+			// 	// 	log.Warnf("Server sent back unknown message: %v", response.String())
+			// 	// } else {
+			// 	// 	status := statusIntf.(string)
+			// 	// 	switch status {
+			// 	// 	case "KEEPALIVED":
+			// 	// 		// Nothing to do
+			// 	// 	case "OK":
+			// 	// 		log.Errorf("Failed to properly mark submitted work as accepted. work ID: %v, message=%s", response.MessageID, response.String())
+			// 	// 		log.Errorf("Works: %v", sc.submittedWorkRequestIds.List())
+			// 	// 	}
+			// 	// }
+			// }
 			sc.NotifyResponse(response)
 		default:
 			// this is a notification
-			log.Debugf("Received message from stratum server: %v", msg)
+			// log.Debugf("Received message from stratum server: %#v", msg)
 			switch msg["method"].(string) {
-			case "job":
+			case "mining.notify":
+				log.Debugf("Received line from server: %v", msg)
 				if work, err := ParseWork(msg["params"].(map[string]interface{})); err != nil {
 					log.Errorf("Failed to parse job: %v", err)
 					continue
 				} else {
 					sc.NotifyNewWork(work)
 				}
+			case "mining.set_difficulty":
+				log.Debugf("Received line from server: %v", msg)
+				// if work, err := ParseWork(msg["params"].(map[string]interface{})); err != nil {
+				// 	log.Errorf("Failed to parse job: %v", err)
+				// 	continue
+				// } else {
+				// 	sc.NotifyNewWork(work)
+				// }
 			default:
 				log.Errorf("Unknown method: %v", msg["method"])
 			}
@@ -321,7 +352,7 @@ func (sc *StratumContext) SubmitWork(work *Work, hash string) error {
 	if req, err := sc.Call("submit", args); err != nil {
 		return err
 	} else {
-		sc.submittedWorkRequestIds.Add(uint64(req.MessageID.(int)))
+		sc.submittedWorkRequestIds.Add(*req.MessageID)
 		// Successfully submitted result
 		log.Debugf("Successfully submitted work result: job=%v result=%v", work.JobID, hash)
 		args["work"] = work
@@ -349,6 +380,11 @@ func (sc *StratumContext) RegisterResponseListener(rChan chan *Response) {
 func (sc *StratumContext) GetJob() error {
 	// args := make(map[string]interface{})
 	// args["id"] = sc.SessionID
+	_, err := sc.Call("mining.subscribe", []string{})
+	return err
+}
+
+func (sc *StratumContext) subscribe() error {
 	_, err := sc.Call("mining.subscribe", []string{})
 	return err
 }

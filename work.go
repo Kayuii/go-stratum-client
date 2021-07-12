@@ -2,6 +2,7 @@ package stratum
 
 import (
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"math"
 	"strings"
@@ -31,11 +32,22 @@ func NewWork() *Work {
 type WorkData []byte
 
 func ParseWorkFromResponse(r *Response) (*Work, error) {
-	result := r.Result
-	if job, ok := result["job"]; !ok {
+	result := r.Method
+
+	if result != "mining.notify" {
 		return nil, fmt.Errorf("No job found")
 	} else {
-		return ParseWork(job.(map[string]interface{}))
+
+		var o = make(map[string]interface{})
+		d, err := r.Params.MarshalJSON()
+		if err != nil {
+			return nil, fmt.Errorf("bad request")
+		}
+		if err := json.Unmarshal(d, &o); err != nil {
+			return nil, fmt.Errorf("bad request")
+		}
+
+		return ParseWork(o)
 	}
 }
 

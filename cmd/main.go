@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"io/ioutil"
 	"os"
 	"sync"
@@ -47,16 +46,12 @@ func connect(sc *stratum.StratumContext) error {
 }
 
 func main() {
-	fmt.Println("Cannot arbitrarily call sc.GetJob()")
-
-	// require := require.New(t)
 
 	sc := stratum.New()
 	err := connect(sc)
 	if err != nil {
 		panic(err)
 	}
-	// require.Nil(err)
 
 	wg := sync.WaitGroup{}
 	wg.Add(2)
@@ -72,16 +67,9 @@ func main() {
 	}()
 
 	err = sc.Authorize(testConfig["username"].(string), testConfig["pass"].(string))
-	// require.Nil(err)
 	if err != nil {
 		panic(err)
 	}
 
-	err = sc.GetJob()
-	if err != nil {
-		panic(err)
-	}
-
-	// require.Nil(err)
 	wg.Wait()
 }

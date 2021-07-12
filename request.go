@@ -3,12 +3,12 @@ package stratum
 import "encoding/json"
 
 type Request struct {
-	MessageID    interface{} `json:"id"`
+	MessageID    *uint64     `json:"id"`
 	RemoteMethod string      `json:"method"`
 	Parameters   interface{} `json:"params"`
 }
 
-func NewRequest(id int, method string, args interface{}) *Request {
+func NewRequest(id *uint64, method string, args interface{}) *Request {
 	return &Request{
 		id,
 		method,
